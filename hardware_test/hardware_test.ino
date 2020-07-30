@@ -29,14 +29,35 @@ constexpr int joy_x = A2;
 constexpr int joy_y = A5;
 constexpr int joy_button = A4;
 
+// analog in from jack pcb
+constexpr int pcb_x = A3;
+constexpr int pcb_y = A4;
+constexpr int pcb_z = A5;
+
 constexpr int analog_resolution = 12;
 // ~5% off from potentiometer
-constexpr int analog_hardcode_min = 200;
-constexpr int analog_hardcode_max = 3895;
+constexpr int joystick_hardcode_min = 200;
+constexpr int joystick_hardcode_max = 3895;
 
 // would be replaced with nice calibration if necessary
-constexpr int ch1_min = analog_hardcode_min;
-constexpr int ch1_max = analog_hardcode_max;
+
+#ifdef JOY_IN
+constexpr int ch1 = joy_x;
+constexpr int ch2 = joy_y;
+constexpr int ch3 = joy_button;
+constexpr int ch1_min = joystick_hardcode_min;
+constexpr int ch1_max = joystick_hardcode_max;
+constexpr int ch2_min = joystick_hardcode_min;
+constexpr int ch2_max = joystick_hardcode_max;
+#else
+constexpr int ch1 = pcb_x;
+constexpr int ch2 = pcb_y;
+constexpr int ch3 = pcb_z;
+constexpr int ch1_min = 1515;
+constexpr int ch1_max = 1915;
+constexpr int ch2_min = 25;
+constexpr int ch2_max = 3195;
+#endif
 
 constexpr unsigned long initial_delay = 10000;
 constexpr unsigned long interval = 0;
@@ -68,12 +89,12 @@ int parameter_map(int ch_input, const int ch_min, const int ch_max, const int pa
 }
 
 int ch1_to_wah() {
-  const int ch1 = analogRead(joy_x);
-  const int wah = parameter_map(ch1, ch1_min, ch1_max, 0, 49);
+  const int ch1_val = analogRead(ch1);
+  const int wah = parameter_map(ch1_val, ch1_min, ch1_max, 0, 49);
 
   lcd.setCursor(0, 0);
   lcd.print("Ch1 ");
-  lcd.print(ch1);
+  lcd.print(ch1_val);
   lcd.print(" ");
 
   lcd.setCursor(10, 0);
@@ -82,6 +103,24 @@ int ch1_to_wah() {
   lcd.print(" ");
 
   return wah;
+}
+
+// debug mostly
+int ch2_to_percent() {
+  const int ch2_val = analogRead(ch2);
+  const int percent = parameter_map(ch2_val, ch2_min, ch2_max, 0, 99);
+
+  lcd.setCursor(0, 1);
+  lcd.print("Ch2 ");
+  lcd.print(ch2_val);
+  lcd.print(" ");
+
+  lcd.setCursor(10, 1);
+  lcd.print("%   ");
+  lcd.print(percent);
+  lcd.print(" ");
+
+  return percent;
 }
 
 void dispose_of_incoming() {
@@ -94,10 +133,10 @@ void dispose_of_incoming() {
     ;
   }
 
-  lcd.setCursor(10, 1);
-  lcd.print("In  ");
-  lcd.print(rcvd);
-  lcd.print(" ");
+  //lcd.setCursor(10, 1);
+  //lcd.print("In  ");
+  //lcd.print(rcvd);
+  //lcd.print(" ");
 
   UsbH.Task();
 }
@@ -149,10 +188,12 @@ void setup() {
 }
 
 int last_wah = -1;
+int last_percent = -1;
 void loop() {
   const unsigned long start_millis = millis();
 
   const int wah = ch1_to_wah();
+  const int percent = ch2_to_percent();
 
   if (wah != last_wah) {
     // don'f forget
@@ -169,10 +210,10 @@ void loop() {
 
     const size_t sent = write_to_usb(wahbuf, 10);
 
-    lcd.setCursor(0, 1);
-    lcd.print("Out ");
-    lcd.print(sent);
-    lcd.print(" ");
+    //lcd.setCursor(0, 1);
+    //lcd.print("Out ");
+    //lcd.print(sent);
+    //lcd.print(" ");
   }
 
   dispose_of_incoming();
