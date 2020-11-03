@@ -3,6 +3,8 @@
 #include <usbh_midi.h>
 #include <usbhub.h>
 
+#define JACK_RX
+
 // the most terrible formatting style I can think of
 // hotlinks
 // https://github.com/g200kg/zoom-ms-utility/blob/master/midimessage.md
@@ -26,8 +28,8 @@ constexpr int right_button = 10;
 
 // joystick
 constexpr int joy_x = A2;
-constexpr int joy_y = A5;
-constexpr int joy_button = A4;
+constexpr int joy_y = A1;
+constexpr int joy_button = A0;
 
 // analog in from jack pcb
 constexpr int pcb_x = A3;
@@ -49,7 +51,8 @@ constexpr int ch1_min = joystick_hardcode_min;
 constexpr int ch1_max = joystick_hardcode_max;
 constexpr int ch2_min = joystick_hardcode_min;
 constexpr int ch2_max = joystick_hardcode_max;
-#else
+#endif
+#ifdef JACK_ADC
 constexpr int ch1 = pcb_x;
 constexpr int ch2 = pcb_y;
 constexpr int ch3 = pcb_z;
@@ -57,6 +60,12 @@ constexpr int ch1_min = 1515;
 constexpr int ch1_max = 1915;
 constexpr int ch2_min = 25;
 constexpr int ch2_max = 3195;
+#endif
+#ifdef JACK_RX
+constexpr int ch1_min = 0;
+constexpr int ch1_max = 0;
+constexpr int ch2_min = 4095;
+constexpr int ch2_max = 4095;
 #endif
 
 constexpr unsigned long initial_delay = 10000;
@@ -88,8 +97,38 @@ int parameter_map(int ch_input, const int ch_min, const int ch_max, const int pa
   return candidate;
 }
 
+int channel_read_impl(const int channel_id) {
+#ifdef JOY_IN
+  if (channel_id == 1) return analogRead(ch1);
+  if (channel_id == 2) return analogRead(ch2);
+  return -1;
+#endif
+#ifdef JACK_ADC
+  if (channel_id == 1) return analogRead(ch1);
+  if (channel_id == 2) return analogRead(ch2);
+  return -1;
+#endif
+#ifdef JACK_RX
+while (Serial5.available()) {
+  const int b = Serial5.read();
+  Serial.write(b);
+}
+  return 0; // TODO
+#endif
+  return -2;
+}
+
+
+int read_ch1() {
+  return channel_read_impl(1);
+}
+
+int read_ch2() {
+  return channel_read_impl(2);
+}
+
 int ch1_to_wah() {
-  const int ch1_val = analogRead(ch1);
+  const int ch1_val = read_ch1();
   const int wah = parameter_map(ch1_val, ch1_min, ch1_max, 0, 49);
 
   lcd.setCursor(0, 0);
@@ -107,7 +146,7 @@ int ch1_to_wah() {
 
 // debug mostly
 int ch2_to_percent() {
-  const int ch2_val = analogRead(ch2);
+  const int ch2_val = read_ch2();
   const int percent = parameter_map(ch2_val, ch2_min, ch2_max, 0, 99);
 
   lcd.setCursor(0, 1);
@@ -153,6 +192,9 @@ size_t write_to_usb(const uint8_t* buf, const uint16_t sz) {
 
 void setup() {
   const unsigned long start_millis = millis();
+
+  Serial5.begin(9600);
+  while(!Serial5);
 
   // 16 characters, 2 lines
   lcd.begin(16, 2);
