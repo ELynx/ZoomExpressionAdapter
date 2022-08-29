@@ -1,9 +1,6 @@
 #include <TroykaTextLCD.h>
-#include <Encoder.h>
-#include <usbh_midi.h>
+#include <usbh_midi.h> // https://github.com/gdsports/USB_Host_Library_SAMD
 #include <usbhub.h>
-
-#define JACK_RX
 
 // the most terrible formatting style I can think of
 // hotlinks
@@ -19,61 +16,19 @@ constexpr uint8_t zoom_device_id = 0x5f; //MS-60b
 // backlight 7
 TroykaTextLCD lcd;
 
-// encoder
-Encoder encoder(8, SCK);
-
 // digital buttons
-constexpr int left_button = 9;
+constexpr int left_button = 8;
 constexpr int right_button = 10;
 
-// joystick
-constexpr int joy_x = A2;
-constexpr int joy_y = A1;
-constexpr int joy_button = A0;
-
-// analog in from jack pcb
-constexpr int pcb_x = A3;
-constexpr int pcb_y = A4;
-constexpr int pcb_z = A5;
-
-constexpr int analog_resolution = 12;
-// ~5% off from potentiometer
-constexpr int joystick_hardcode_min = 200;
-constexpr int joystick_hardcode_max = 3895;
-
-// would be replaced with nice calibration if necessary
-
-#ifdef JOY_IN
-constexpr int ch1 = joy_x;
-constexpr int ch2 = joy_y;
-constexpr int ch3 = joy_button;
-constexpr int ch1_min = joystick_hardcode_min;
-constexpr int ch1_max = joystick_hardcode_max;
-constexpr int ch2_min = joystick_hardcode_min;
-constexpr int ch2_max = joystick_hardcode_max;
-#endif
-#ifdef JACK_ADC
-constexpr int ch1 = pcb_x;
-constexpr int ch2 = pcb_y;
-constexpr int ch3 = pcb_z;
-constexpr int ch1_min = 1515;
-constexpr int ch1_max = 1915;
-constexpr int ch2_min = 25;
-constexpr int ch2_max = 3195;
-#endif
-#ifdef JACK_RX
-constexpr int ch1_min = 0;
-constexpr int ch1_max = 0;
-constexpr int ch2_min = 4095;
-constexpr int ch2_max = 4095;
-#endif
+constexpr int ch_min = 0;
+constexpr int ch_max = 127;
 
 constexpr unsigned long initial_delay = 10000;
 constexpr unsigned long interval = 0;
 
 void taskful_wait(const unsigned long from, const unsigned long how_long) {
   if (how_long == 0) return;
-  
+
   while (millis() - from <= how_long) {
     UsbH.Task();
   }
@@ -97,39 +52,58 @@ int parameter_map(int ch_input, const int ch_min, const int ch_max, const int pa
   return candidate;
 }
 
-int channel_read_impl(const int channel_id) {
-#ifdef JOY_IN
-  if (channel_id == 1) return analogRead(ch1);
-  if (channel_id == 2) return analogRead(ch2);
-  return -1;
-#endif
-#ifdef JACK_ADC
-  if (channel_id == 1) return analogRead(ch1);
-  if (channel_id == 2) return analogRead(ch2);
-  return -1;
-#endif
-#ifdef JACK_RX
-while (Serial5.available()) {
-  const int b = Serial5.read();
-  Serial.write(b);
-}
-  return 0; // TODO
-#endif
-  return -2;
-}
+constexpr int NO_LAST_CH = -1;
 
+bool sync = false;
+int last_ch = NO_LAST_CH;
+int ch_1 = -1;
+int ch_2 = -1;
+int ch_3 = -1;
+
+int poll_serial() {
+  while (Serial5.available()) {
+    const int in_byte = Serial5.read();
+
+    if (in_byte == 0xB0) {
+      sync = true;
+    } else if (sync && last_ch == NO_LAST_CH) {
+      last_ch = in_byte;
+    } else if (last_ch != NO_LAST_CH) {
+      switch (last_ch) {
+        case 0:
+          ch_1 = in_byte;
+          break;
+        case 1:
+          ch_2 = in_byte;
+          break;
+        case 2:
+          ch_3 = in_byte;
+          break;
+        default:
+          break;
+      }
+
+      sync = false;
+      last_ch = NO_LAST_CH;
+    }
+  }
+}
 
 int read_ch1() {
-  return channel_read_impl(1);
+  return ch_1;
 }
 
 int read_ch2() {
-  return channel_read_impl(2);
+  return ch_2;
+}
+
+int read_ch3() {
+  return ch_3;
 }
 
 int ch1_to_wah() {
   const int ch1_val = read_ch1();
-  const int wah = parameter_map(ch1_val, ch1_min, ch1_max, 0, 49);
+  const int wah = parameter_map(ch1_val, ch_min, ch_max, 0, 49);
 
   lcd.setCursor(0, 0);
   lcd.print("Ch1 ");
@@ -145,9 +119,9 @@ int ch1_to_wah() {
 }
 
 // debug mostly
-int ch2_to_percent() {
+int ch2_ch3_to_screen() {
   const int ch2_val = read_ch2();
-  const int percent = parameter_map(ch2_val, ch2_min, ch2_max, 0, 99);
+  const int ch3_val = read_ch3();
 
   lcd.setCursor(0, 1);
   lcd.print("Ch2 ");
@@ -155,11 +129,11 @@ int ch2_to_percent() {
   lcd.print(" ");
 
   lcd.setCursor(10, 1);
-  lcd.print("%   ");
-  lcd.print(percent);
+  lcd.print("Ch3 ");
+  lcd.print(ch3_val);
   lcd.print(" ");
 
-  return percent;
+  return ch2_val << 8 + ch3_val;
 }
 
 void dispose_of_incoming() {
@@ -193,8 +167,8 @@ size_t write_to_usb(const uint8_t* buf, const uint16_t sz) {
 void setup() {
   const unsigned long start_millis = millis();
 
-  Serial5.begin(9600);
-  while(!Serial5);
+  Serial5.begin(31250); // MIDI
+  while (!Serial5);
 
   // 16 characters, 2 lines
   lcd.begin(16, 2);
@@ -203,9 +177,6 @@ void setup() {
 
   pinMode(left_button, INPUT);
   pinMode(right_button, INPUT);
-
-  analogReadResolution(analog_resolution);
-  pinMode(joy_button, INPUT);
 
   if (UsbH.Init()) {
     lcd.setCursor(0, 0);
@@ -230,12 +201,14 @@ void setup() {
 }
 
 int last_wah = -1;
-int last_percent = -1;
+
 void loop() {
   const unsigned long start_millis = millis();
 
+  poll_serial();
+
   const int wah = ch1_to_wah();
-  const int percent = ch2_to_percent();
+  const int screen = ch2_ch3_to_screen();
 
   if (wah != last_wah) {
     // don'f forget
