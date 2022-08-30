@@ -46,17 +46,24 @@ int parameter_map(int ch_input, const int param_min, const int param_max) {
   if (ch_input <= ch_min) return param_min;
   if (ch_input >= ch_max) return param_max;
 
-  // terrible dot exe
-  const int param_steps = param_max - param_min;
-  const int ch_step = (ch_max - ch_min) / param_steps;
-  const int param_step = (ch_input - ch_min) / ch_step;
+  // to prevent division by zero add a 1
+  const int reverse = (ch_max - ch_min + 1) / (ch_input - ch_min + 1);
+  // 127 -> 1
+  // 63  -> 2
+  // 0   -> 128
 
-  // protect parameters
-  //if (param_step < 0) return param_min;
-  const int candidate = param_step + param_min;
-  if (candidate > param_max) return param_max;
+  const int scaler = param_max - param_min + 1;
+  // for pedal operatedeffects, usually 50
 
-  return candidate;
+  const int value = scaler / reverse;
+  // 127 -> 50
+  // 63  -> 25
+  // 3   -> 1
+  // 2   -> 0
+  // 1   -> 0
+  // 0   -> 0
+
+  return value;
 }
 
 
