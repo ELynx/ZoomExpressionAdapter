@@ -1,16 +1,23 @@
 #include <TroykaTextLCD.h>
-#include <usbh_midi.h> // https://github.com/gdsports/USB_Host_Library_SAMD
+
+// https://github.com/gdsports/USB_Host_Library_SAMD
+#include <usbh_midi.h>
 #include <usbhub.h>
 
-// the most terrible formatting style I can think of
 // hotlinks
 // https://github.com/g200kg/zoom-ms-utility/blob/master/midimessage.md
 
+constexpr uint8_t zoom_device_id_ms50g   = 0x58;
+constexpr uint8_t zoom_device_id_ms60b   = 0x5f;
+constexpr uint8_t zoom_device_id_ms70cdr = 0x61;
+
+constexpr uint8_t zoom_device_id = zoom_device_id_ms60b;
+
+
+// USB shenanigans
 USBHost UsbH;
 USBHub Hub(&UsbH);
 USBH_MIDI Midi(&UsbH);
-
-constexpr uint8_t zoom_device_id = 0x5f; //MS-60b
 
 // i2c 0x3E
 // backlight 7
@@ -20,11 +27,6 @@ TroykaTextLCD lcd;
 constexpr int left_button = 8;
 constexpr int right_button = 10;
 
-constexpr int ch_min = 0;
-constexpr int ch_max = 127;
-
-constexpr unsigned long initial_delay = 10000;
-constexpr unsigned long interval = 0;
 
 void taskful_wait(const unsigned long from, const unsigned long how_long) {
   if (how_long == 0) return;
@@ -34,7 +36,12 @@ void taskful_wait(const unsigned long from, const unsigned long how_long) {
   }
 }
 
-int parameter_map(int ch_input, const int ch_min, const int ch_max, const int param_min, const int param_max) {
+
+int parameter_map(int ch_input, const int param_min, const int param_max) {
+  // from observation
+  constexpr int ch_min = 0;
+  constexpr int ch_max = 127;
+
   // handle values outside and on edges of range without math
   if (ch_input <= ch_min) return param_min;
   if (ch_input >= ch_max) return param_max;
@@ -52,32 +59,36 @@ int parameter_map(int ch_input, const int ch_min, const int ch_max, const int pa
   return candidate;
 }
 
-constexpr int NO_LAST_CH = -1;
 
+constexpr int SYNC_BYTE = 0xB0;
 bool sync = false;
-int last_ch = NO_LAST_CH;
-int ch_1 = -1;
-int ch_2 = -1;
-int ch_3 = -1;
 
-int poll_serial() {
+constexpr int NO_LAST_CH = -1;
+int last_ch = NO_LAST_CH;
+
+int global_ch_1 = 0;
+int global_ch_2 = 0;
+int global_ch_3 = 0;
+
+void poll_serial() {
   while (Serial5.available()) {
     const int in_byte = Serial5.read();
 
-    if (in_byte == 0xB0) {
+    if (in_byte == SYNC_BYTE) {
       sync = true;
+      last_ch = NO_LAST_CH;
     } else if (sync && last_ch == NO_LAST_CH) {
       last_ch = in_byte;
-    } else if (last_ch != NO_LAST_CH) {
+    } else if (sync && last_ch != NO_LAST_CH) {
       switch (last_ch) {
         case 0:
-          ch_1 = in_byte;
+          global_ch_1 = in_byte;
           break;
         case 1:
-          ch_2 = in_byte;
+          global_ch_2 = in_byte;
           break;
         case 2:
-          ch_3 = in_byte;
+          global_ch_3 = in_byte;
           break;
         default:
           break;
@@ -89,21 +100,23 @@ int poll_serial() {
   }
 }
 
+
 int read_ch1() {
-  return ch_1;
+  return global_ch_1;
 }
 
 int read_ch2() {
-  return ch_2;
+  return global_ch_2;
 }
 
 int read_ch3() {
-  return ch_3;
+  return global_ch_3;
 }
+
 
 int ch1_to_wah() {
   const int ch1_val = read_ch1();
-  const int wah = parameter_map(ch1_val, ch_min, ch_max, 0, 49);
+  const int wah = parameter_map(ch1_val, 0, 49);
 
   lcd.setCursor(0, 0);
   lcd.print("Ch1 ");
@@ -118,7 +131,7 @@ int ch1_to_wah() {
   return wah;
 }
 
-// debug mostly
+
 int ch2_ch3_to_screen() {
   const int ch2_val = read_ch2();
   const int ch3_val = read_ch3();
@@ -135,6 +148,7 @@ int ch2_ch3_to_screen() {
 
   return ch2_val << 8 + ch3_val;
 }
+
 
 void dispose_of_incoming() {
   UsbH.Task();
@@ -154,15 +168,20 @@ void dispose_of_incoming() {
   UsbH.Task();
 }
 
+
 size_t write_to_usb(const uint8_t* buf, const uint16_t sz) {
   UsbH.Task();
 
-  size_t sent = Midi.SendSysEx(const_cast<uint8_t*>(buf), sz, 0);
+  const size_t sent = Midi.SendSysEx(const_cast<uint8_t*>(buf), sz, 0);
 
   UsbH.Task();
 
   return sent;
 }
+
+
+constexpr unsigned long initial_delay = 10000;
+constexpr unsigned long interval = 0;
 
 void setup() {
   const unsigned long start_millis = millis();
@@ -199,6 +218,7 @@ void setup() {
 
   dispose_of_incoming();
 }
+
 
 int last_wah = -1;
 
