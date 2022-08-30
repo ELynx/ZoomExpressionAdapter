@@ -41,29 +41,29 @@ int parameter_map(int ch_input, const int param_min, const int param_max) {
   // from observation
   constexpr int ch_min = 0;
   constexpr int ch_max = 127;
+  constexpr int scaler = 100;
 
   // handle values outside and on edges of range without math
   if (ch_input <= ch_min) return param_min;
   if (ch_input >= ch_max) return param_max;
+  // 0   -> min
+  // 127 -> max
 
-  // to prevent division by zero add a 1
-  const int reverse = (ch_max - ch_min + 1) / (ch_input - ch_min + 1);
-  // 127 -> 1
-  // 63  -> 2
-  // 0   -> 128
+  // division by zero prevented above
+  const int reverse = (scaler * ch_max - scaler * ch_min) / (ch_input - ch_min);
+  // 1   -> 12700
+  // 2   -> 6350
+  // 3   -> 4233
+  // 63  -> 201
+  // 64  -> 198
+  // 126 -> 100
 
-  const int scaler = param_max - param_min + 1;
-  // for pedal operatedeffects, usually 50
+  const int steps = param_max - param_min;
+  // for pedal operatedeffects, usually 49
 
-  const int value = scaler / reverse;
-  // 127 -> 50
-  // 63  -> 25
-  // 3   -> 1
-  // 2   -> 0
-  // 1   -> 0
-  // 0   -> 0
+  const int scaled = steps * scaler / reverse;
 
-  return value;
+  return param_min + scaled;
 }
 
 
