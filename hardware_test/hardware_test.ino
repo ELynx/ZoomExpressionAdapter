@@ -4,6 +4,8 @@
 #include <usbh_midi.h>
 #include <usbhub.h>
 
+#define BRIDGE_MIDI_PROG_SERIAL
+
 // hotlinks
 // https://github.com/g200kg/zoom-ms-utility/blob/master/midimessage.md
 
@@ -163,9 +165,28 @@ void dispose_of_incoming() {
   uint16_t received;
   uint8_t midi_buffer[64];
 
-  if (Midi.RecvData(&received,  midi_buffer) == 0) {
+  if (Midi.RecvData(&received,  midi_buffer) > 0) {
+#ifdef BRIDGE_MIDI_PROG_SERIAL
+    global_ch_2 = Serial.write(midi_buffer, received);
+#else
     ;
+#endif
   }
+#ifdef BRIDGE_MIDI_PROG_SERIAL
+  else {
+    global_ch_2 = 999;
+  }
+#endif
+
+#ifdef BRIDGE_MIDI_PROG_SERIAL
+  auto command_size = Serial.available();
+  if (command_size > 0) {
+    auto command_size_actual = Serial.readBytes(midi_buffer, command_size);
+    global_ch_3 = Midi.SendData(midi_buffer, command_size_actual);
+  } else {
+    global_ch_3 = 999;
+  }
+#endif
 
   //lcd.setCursor(10, 1);
   //lcd.print("In  ");
@@ -192,6 +213,11 @@ constexpr unsigned long interval = 0;
 
 void setup() {
   const unsigned long start_millis = millis();
+
+#ifdef BRIDGE_MIDI_PROG_SERIAL
+  Serial.begin(31250);
+  while (!Serial);
+#endif
 
   Serial5.begin(31250); // MIDI
   while (!Serial5);
