@@ -160,10 +160,10 @@ int ch2_ch3_to_screen() {
 void dispose_of_incoming() {
   UsbH.Task();
 
-  uint16_t rcvd;
-  uint8_t bufMidi[64];
+  uint16_t received;
+  uint8_t midi_buffer[64];
 
-  if (Midi.RecvData(&rcvd,  bufMidi) == 0) {
+  if (Midi.RecvData(&received,  midi_buffer) == 0) {
     ;
   }
 
