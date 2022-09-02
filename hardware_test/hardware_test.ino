@@ -61,7 +61,7 @@ int parameter_map(int ch_input, const int param_min, const int param_max) {
   // 126 -> 100
 
   const int steps = param_max - param_min;
-  // for pedal operatedeffects, usually 49
+  // for pedal operated effects, usually 49
 
   const int scaled = steps * scaler / reverse;
 
@@ -123,19 +123,55 @@ int read_ch3() {
 }
 
 
+void print_tree_digit_value(int value) {
+  if (value < -99) {
+    lcd.print("---");
+    return;
+  }
+
+  if (value < -9) {
+    lcd.print(value);
+    return;
+  }
+
+  if (value < 0) {
+    lcd.print(" ");
+    lcd.print(value);
+    return;
+  }
+
+  if (value < 10) {
+    lcd.print("  ");
+    lcd.print(value);
+    return;
+  }
+
+  if (value < 100) {
+    lcd.print(" ");
+    lcd.print(value);
+    return;
+  }
+
+  if (value < 1000) {
+    lcd.print(value);
+    return;
+  }
+
+  lcd.print("+++");
+}
+
+
 int ch1_to_wah() {
   const int ch1_val = read_ch1();
   const int wah = parameter_map(ch1_val, 0, 49);
 
   lcd.setCursor(0, 0);
   lcd.print("Ch1 ");
-  lcd.print(ch1_val);
-  lcd.print(" ");
+  print_tree_digit_value(ch1_val);
 
-  lcd.setCursor(10, 0);
+  lcd.setCursor(9, 0);
   lcd.print("Wah ");
-  lcd.print(wah);
-  lcd.print(" ");
+  print_tree_digit_value(wah);
 
   return wah;
 }
@@ -147,15 +183,24 @@ int ch2_ch3_to_screen() {
 
   lcd.setCursor(0, 1);
   lcd.print("Ch2 ");
-  lcd.print(ch2_val);
-  lcd.print(" ");
+  print_tree_digit_value(ch2_val);
 
-  lcd.setCursor(10, 1);
+  lcd.setCursor(9, 1);
   lcd.print("Ch3 ");
-  lcd.print(ch3_val);
-  lcd.print(" ");
+  print_tree_digit_value(ch3_val);
 
   return ch2_val << 8 + ch3_val;
+}
+
+
+size_t write_to_usb(const uint8_t* midi_buffer, const uint16_t to_be_sent) {
+  UsbH.Task();
+
+  const size_t return_code = Midi.SendSysEx(const_cast<uint8_t*>(midi_buffer), to_be_sent, 0);
+
+  UsbH.Task();
+
+  return return_code == 0 ? to_be_sent : 0;
 }
 
 
@@ -165,46 +210,28 @@ void dispose_of_incoming() {
   uint16_t received;
   uint8_t midi_buffer[64];
 
-  if (Midi.RecvData(&received,  midi_buffer) > 0) {
+  // returned value is return code
+  if (Midi.RecvData(&received,  midi_buffer) == 0) {
 #ifdef BRIDGE_MIDI_PROG_SERIAL
-    global_ch_2 = Serial.write(midi_buffer, received);
+    if (received > 0) {
+      global_ch_2 = Serial.write(midi_buffer, received);
+    }
 #else
     ;
 #endif
   }
-#ifdef BRIDGE_MIDI_PROG_SERIAL
-  else {
-    global_ch_2 = 999;
-  }
-#endif
 
 #ifdef BRIDGE_MIDI_PROG_SERIAL
-  auto command_size = Serial.available();
+  UsbH.Task();
+
+  size_t command_size = Serial.available();
   if (command_size > 0) {
-    auto command_size_actual = Serial.readBytes(midi_buffer, command_size);
-    global_ch_3 = Midi.SendData(midi_buffer, command_size_actual);
-  } else {
-    global_ch_3 = 999;
+    size_t command_size_actual = Serial.readBytes(midi_buffer, command_size);
+    global_ch_3 = write_to_usb(midi_buffer, command_size_actual);
   }
 #endif
 
-  //lcd.setCursor(10, 1);
-  //lcd.print("In  ");
-  //lcd.print(rcvd);
-  //lcd.print(" ");
-
   UsbH.Task();
-}
-
-
-size_t write_to_usb(const uint8_t* buf, const uint16_t sz) {
-  UsbH.Task();
-
-  const size_t sent = Midi.SendSysEx(const_cast<uint8_t*>(buf), sz, 0);
-
-  UsbH.Task();
-
-  return sent;
 }
 
 
@@ -215,7 +242,7 @@ void setup() {
   const unsigned long start_millis = millis();
 
 #ifdef BRIDGE_MIDI_PROG_SERIAL
-  Serial.begin(31250);
+  Serial.begin(57600);
   while (!Serial);
 #endif
 
@@ -277,11 +304,6 @@ void loop() {
                            };
 
     const size_t sent = write_to_usb(wahbuf, 10);
-
-    //lcd.setCursor(0, 1);
-    //lcd.print("Out ");
-    //lcd.print(sent);
-    //lcd.print(" ");
   }
 
   dispose_of_incoming();
