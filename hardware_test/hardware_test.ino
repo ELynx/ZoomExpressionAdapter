@@ -4,7 +4,7 @@
 #include <usbh_midi.h>
 #include <usbhub.h>
 
-#define BRIDGE_MIDI_PROG_SERIAL
+//#define BRIDGE_MIDI_PROG_SERIAL
 
 // hotlinks
 // https://github.com/g200kg/zoom-ms-utility/blob/master/midimessage.md
@@ -224,9 +224,9 @@ void dispose_of_incoming() {
 #ifdef BRIDGE_MIDI_PROG_SERIAL
   UsbH.Task();
 
-  size_t command_size = Serial.available();
+  auto command_size = Serial.available();
   if (command_size > 0) {
-    size_t command_size_actual = Serial.readBytes(midi_buffer, command_size);
+    auto command_size_actual = Serial.readBytes(midi_buffer, command_size);
     global_ch_3 = write_to_usb(midi_buffer, command_size_actual);
   }
 #endif
